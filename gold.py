@@ -3,10 +3,11 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-# Replace this with your actual public Google Sheet CSV URL
+# Public Google Sheet CSV URL
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkhCx53_fngzpmxn_1h-I3Cr_JwzObE96h_cYgv652wz7yDfyDkV_P7kiXhrirnDwABdmBxM3ZjrO1/pub?gid=0&single=true&output=csv"
 
-@st.cache_data
+# Cached function to load data
+@st.cache_data(ttl=600)  # Cache expires every 10 minutes
 def load_data():
     df = pd.read_csv(GOOGLE_SHEET_CSV_URL)
     df.columns = df.columns.str.strip()
@@ -57,7 +58,7 @@ def improved_signal(df):
     df.loc[buy_condition, 'Signal'] = 'Buy'
     df.loc[avoid_condition, 'Signal'] = 'Avoid'
 
-    # Ensure at least one buy per week
+    # Ensure at least one Buy per week
     df['Week'] = df['Date'].dt.isocalendar().week
     for week in df['Week'].unique():
         week_df = df[df['Week'] == week]
@@ -77,16 +78,20 @@ def plot_price(df):
     fig.update_layout(title="Gold Price & Buy Signals", xaxis_title="Date", yaxis_title="22K Price")
     st.plotly_chart(fig, use_container_width=True)
 
-# Streamlit App UI
+# Streamlit UI setup
 st.set_page_config(page_title="Gold Tracker", layout="wide")
-st.title("📈 Gold Investment ")
+st.title("📈 Gold Investment Signal Tracker")
+
+# Refresh button
+refresh = st.button("🔄 Refresh Data")
+if refresh:
+    st.cache_data.clear()
 
 try:
     df = load_data()
     df = improved_signal(df)
     plot_price(df)
-    st.dataframe(df[['Date', '22K Price', 'RSI', 'MACD_Histogram', 'Signal']].iloc[::-1], use_container_width=True)
-
+    st.dataframe(df[['Date', '22K Price', 'RSI', 'MACD_Histogram', 'Signal']], use_container_width=True)
 
     num_buys = df[df['Signal'] == 'Buy'].shape[0]
     st.success(f"📌 Total Buy Signals: {num_buys}")
