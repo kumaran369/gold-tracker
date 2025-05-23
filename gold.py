@@ -85,7 +85,8 @@ try:
     df = load_data()
     df = improved_signal(df)
     plot_price(df)
-    st.dataframe(df[['Date', '22K Price', 'RSI', 'MACD_Histogram', 'Signal']], use_container_width=True)
+    st.dataframe(df[['Date', '22K Price', 'RSI', 'MACD_Histogram', 'Signal']].iloc[::-1], use_container_width=True)
+
 
     num_buys = df[df['Signal'] == 'Buy'].shape[0]
     st.success(f"📌 Total Buy Signals: {num_buys}")
