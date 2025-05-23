@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
 
-# Google Sheet CSV URL (public)
+# Google Sheet CSV URL
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkhCx53_fngzpmxn_1h-I3Cr_JwzObE96h_cYgv652wz7yDfyDkV_P7kiXhrirnDwABdmBxM3ZjrO1/pub?gid=0&single=true&output=csv"
 
-# Cache the data for 10 minutes
 @st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(GOOGLE_SHEET_CSV_URL)
@@ -58,7 +60,6 @@ def improved_signal(df):
     df.loc[buy_condition, 'Signal'] = 'Buy'
     df.loc[avoid_condition, 'Signal'] = 'Avoid'
 
-    # Ensure at least one Buy per week
     df['Week'] = df['Date'].dt.isocalendar().week
     for week in df['Week'].unique():
         week_df = df[df['Week'] == week]
@@ -66,6 +67,35 @@ def improved_signal(df):
             min_idx = week_df['22K Price'].idxmin()
             df.at[min_idx, 'Signal'] = 'Buy'
 
+    return df
+
+def apply_ml_strategy(df):
+    df['RSI'] = calculate_rsi(df['22K Price'])
+    df['MACD'], df['MACD_Signal'], df['MACD_Hist'] = calculate_macd(df['22K Price'])
+    df['Price Change'] = df['22K Price'].pct_change()
+    df['Future Return'] = df['22K Price'].shift(-1) > df['22K Price']
+
+    df_ml = df.dropna().copy()
+    features = ['RSI', 'MACD', 'MACD_Hist', 'Price Change']
+    X = df_ml[features]
+    y = df_ml['Future Return'].astype(int)
+
+    if len(X) < 10:
+        st.warning("⚠️ Not enough data for ML model. Showing rule-based signals only.")
+        df['ML_Signal'] = "N/A"
+        return df
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=0.2)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    df_ml['ML_Buy_Pred'] = model.predict(X)
+
+    st.subheader("🧠 ML Model Performance")
+    st.text(classification_report(y_test, model.predict(X_test)))
+
+    df['ML_Signal'] = df_ml['ML_Buy_Pred']
+    df['ML_Signal'] = df['ML_Signal'].fillna(0).map({0: "Don't Buy", 1: "Buy"})
     return df
 
 def plot_price(df):
@@ -78,23 +108,20 @@ def plot_price(df):
     fig.update_layout(title="Gold Price & Buy Signals", xaxis_title="Date", yaxis_title="22K Price")
     st.plotly_chart(fig, use_container_width=True)
 
-# Streamlit UI
 st.set_page_config(page_title="Gold Tracker", layout="wide")
 st.title("📈 Gold Investment Signal Tracker")
 
-# Refresh button
-if st.button("🔄 Refresh Data Now"):
+refresh = st.button("🔄 Refresh Data")
+if refresh:
     st.cache_data.clear()
-    st.rerun()
 
-# Main logic
 try:
     df = load_data()
     df = improved_signal(df)
+    df = apply_ml_strategy(df)
     plot_price(df)
 
-    # Show latest entries first
-    st.dataframe(df[['Date', '22K Price', 'RSI', 'MACD_Histogram', 'Signal']].iloc[::-1], use_container_width=True)
+    st.dataframe(df[['Date', '22K Price', 'RSI', 'MACD_Histogram', 'Signal', 'ML_Signal']].iloc[::-1], use_container_width=True)
 
     num_buys = df[df['Signal'] == 'Buy'].shape[0]
     st.success(f"📌 Total Buy Signals: {num_buys}")
